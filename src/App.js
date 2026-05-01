@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Users, CalendarCheck, Calculator, Plus, Trash2, Edit2, Save, DollarSign, UserCheck, Loader2, CheckCircle2, Circle, FileText, X } from 'lucide-react';
+import { Users, CalendarCheck, Calculator, Plus, Trash2, Edit2, Save, DollarSign, UserCheck, Loader2, CheckCircle2, Circle, FileText, X, Lock } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -25,6 +25,12 @@ const db = getFirestore(app);
 const BANK_ID = "MB"; // Ví dụ: MB, VCB, TCB, ACB, VPB, TPB...
 const ACCOUNT_NO = "0123456789"; // Số tài khoản ngân hàng
 const ACCOUNT_NAME = "DAO THI BAO LUONG"; // Tên chủ tài khoản (Không dấu)
+
+// ==========================================
+// THÔNG TIN ĐĂNG NHẬP (WHITELIST)
+// ==========================================
+const APP_USERNAME = "luong";
+const APP_PASSWORD = "123";
 // ==========================================
 
 export default function App() {
@@ -33,25 +39,30 @@ export default function App() {
   const [records, setRecords] = useState([]);
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Trạng thái kiểm tra màn hình Đăng nhập (Lưu trên máy người dùng)
+  const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('luong_logged_in') === 'true');
 
-  // Xác thực ẩn danh (Để vượt qua rào cản bảo mật Firebase)
+  // Xác thực ẩn danh (Chỉ chạy khi đã qua màn hình Login)
   useEffect(() => {
+    if (!isLoggedIn) return;
+
     const initAuth = async () => {
       try { await signInAnonymously(auth); } catch (error) { console.error("Lỗi xác thực:", error); }
     };
     initAuth();
+    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser) setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isLoggedIn]);
 
-  // Tải dữ liệu Real-time (Sử dụng thư mục chung cho TẤT CẢ thiết bị)
+  // Tải dữ liệu Real-time
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isLoggedIn) return;
     
-    // Đã thay đổi đường dẫn từ 'users/user.uid/...' sang 'shared_data/lop_luong/...'
     const unsubStudents = onSnapshot(collection(db, 'shared_data', 'lop_luong', 'students'), (snapshot) => {
       setStudents(snapshot.docs.map(d => d.data()));
     });
@@ -61,9 +72,9 @@ export default function App() {
     });
     
     return () => { unsubStudents(); unsubRecords(); };
-  }, [user]);
+  }, [user, isLoggedIn]);
 
-  // Các hàm tương tác Database (Lưu vào chung 1 thư mục)
+  // Các hàm tương tác Database
   const handleSaveStudent = async (data) => {
     if (!user) return;
     const id = data.id ? data.id.toString() : Date.now().toString();
@@ -93,22 +104,48 @@ export default function App() {
 
   const formatCurrency = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 
+  const handleLoginSuccess = () => {
+    setIsLoggedIn(true);
+    localStorage.setItem('luong_logged_in', 'true');
+    setIsLoading(true); // Kích hoạt trạng thái loading chờ Firebase tải data
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    localStorage.removeItem('luong_logged_in');
+  };
+
+  // NẾU CHƯA ĐĂNG NHẬP -> HIỂN THỊ MÀN HÌNH ĐĂNG NHẬP
+  if (!isLoggedIn) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // NẾU ĐÃ ĐĂNG NHẬP NHƯNG CHƯA CÓ DATA FIREBASE -> HIỂN THỊ LOADING
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center text-indigo-600"><Loader2 className="animate-spin" size={48} /></div>;
   }
 
+  // GIAO DIỆN CHÍNH
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col md:flex-row">
-      <div className="w-64 bg-indigo-900 text-white p-6 hidden md:flex flex-col shadow-xl">
+      <div className="w-64 bg-indigo-900 text-white p-6 hidden md:flex flex-col shadow-xl relative">
         <h1 className="text-xl font-bold flex items-center gap-2 mb-8"><UserCheck /> Lớp Của Lương</h1>
-        <nav className="space-y-2">
+        <nav className="space-y-2 flex-1">
           <TabBtn active={activeTab === 'attendance'} onClick={() => setActiveTab('attendance')} icon={<CalendarCheck size={20}/>} label="Điểm danh" />
           <TabBtn active={activeTab === 'billing'} onClick={() => setActiveTab('billing')} icon={<Calculator size={20}/>} label="Tính tiền" />
           <TabBtn active={activeTab === 'students'} onClick={() => setActiveTab('students')} icon={<Users size={20}/>} label="Học sinh" />
         </nav>
+        <button onClick={handleLogout} className="mt-auto text-indigo-300 hover:text-white text-sm flex items-center gap-2 transition-colors">
+          <Lock size={16} /> Đăng xuất
+        </button>
       </div>
 
       <div className="flex-1 p-4 md:p-8 pb-24 h-screen overflow-y-auto">
+        <div className="md:hidden flex justify-between items-center mb-4">
+          <h1 className="text-xl font-bold text-indigo-900 flex items-center gap-2"><UserCheck size={24}/> Lớp Của Lương</h1>
+          <button onClick={handleLogout} className="text-slate-500 hover:text-slate-800"><Lock size={20}/></button>
+        </div>
+
         {activeTab === 'students' && <StudentsView students={students} onSave={handleSaveStudent} onDelete={handleDeleteStudent} format={formatCurrency} />}
         {activeTab === 'attendance' && <AttendanceView students={students} records={records} onToggle={handleToggleAttendance} />}
         {activeTab === 'billing' && <BillingView students={students} records={records} format={formatCurrency} />}
@@ -126,6 +163,69 @@ export default function App() {
 // ==========================================
 // CÁC COMPONENTS CHỨC NĂNG
 // ==========================================
+
+function LoginScreen({ onLoginSuccess }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (username.trim().toLowerCase() === APP_USERNAME && password === APP_PASSWORD) {
+      setError('');
+      onLoginSuccess();
+    } else {
+      setError('Tài khoản hoặc mật khẩu không đúng!');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm overflow-hidden">
+        <div className="bg-indigo-600 p-8 text-center">
+          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
+            <UserCheck size={32} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-wide">LỚP CỦA LƯƠNG</h1>
+          <p className="text-indigo-200 text-sm mt-1">Hệ thống quản lý nội bộ</p>
+        </div>
+        <div className="p-8">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-600 mb-1">Tài khoản</label>
+              <input 
+                type="text" 
+                value={username} 
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                placeholder="Nhập tài khoản"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-600 mb-1">Mật khẩu</label>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                placeholder="••••••"
+              />
+            </div>
+            
+            {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
+            
+            <button 
+              type="submit"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-indigo-200"
+            >
+              Đăng Nhập
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TabBtn({ active, onClick, icon, label }) {
   return (
