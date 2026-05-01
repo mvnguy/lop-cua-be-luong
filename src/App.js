@@ -34,7 +34,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Xác thực ẩn danh
+  // Xác thực ẩn danh (Để vượt qua rào cản bảo mật Firebase)
   useEffect(() => {
     const initAuth = async () => {
       try { await signInAnonymously(auth); } catch (error) { console.error("Lỗi xác thực:", error); }
@@ -47,41 +47,45 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Tải dữ liệu Real-time
+  // Tải dữ liệu Real-time (Sử dụng thư mục chung cho TẤT CẢ thiết bị)
   useEffect(() => {
     if (!user) return;
-    const unsubStudents = onSnapshot(collection(db, 'users', user.uid, 'students'), (snapshot) => {
+    
+    // Đã thay đổi đường dẫn từ 'users/user.uid/...' sang 'shared_data/lop_luong/...'
+    const unsubStudents = onSnapshot(collection(db, 'shared_data', 'lop_luong', 'students'), (snapshot) => {
       setStudents(snapshot.docs.map(d => d.data()));
     });
-    const unsubRecords = onSnapshot(collection(db, 'users', user.uid, 'records'), (snapshot) => {
+    const unsubRecords = onSnapshot(collection(db, 'shared_data', 'lop_luong', 'records'), (snapshot) => {
       setRecords(snapshot.docs.map(d => d.data()));
       setIsLoading(false);
     });
+    
     return () => { unsubStudents(); unsubRecords(); };
   }, [user]);
 
-  // Các hàm tương tác Database
+  // Các hàm tương tác Database (Lưu vào chung 1 thư mục)
   const handleSaveStudent = async (data) => {
     if (!user) return;
     const id = data.id ? data.id.toString() : Date.now().toString();
-    await setDoc(doc(db, 'users', user.uid, 'students', id), { ...data, id: Number(id) });
+    await setDoc(doc(db, 'shared_data', 'lop_luong', 'students', id), { ...data, id: Number(id) });
   };
 
   const handleDeleteStudent = async (id) => {
     if (!user) return;
     if(window.confirm('Bạn có chắc chắn muốn xóa học sinh này không?')) {
-      await deleteDoc(doc(db, 'users', user.uid, 'students', id.toString()));
+      await deleteDoc(doc(db, 'shared_data', 'lop_luong', 'students', id.toString()));
     }
   };
 
   const handleToggleAttendance = async (date, studentId) => {
     if (!user) return;
     const existingRecord = records.find(r => r.date === date && r.studentId === studentId);
+    
     if (existingRecord) {
-      await deleteDoc(doc(db, 'users', user.uid, 'records', existingRecord.id.toString()));
+      await deleteDoc(doc(db, 'shared_data', 'lop_luong', 'records', existingRecord.id.toString()));
     } else {
       const id = Date.now().toString();
-      await setDoc(doc(db, 'users', user.uid, 'records', id), {
+      await setDoc(doc(db, 'shared_data', 'lop_luong', 'records', id), {
         id: Number(id), studentId, date, sessions: 1
       });
     }
@@ -253,12 +257,11 @@ function AttendanceView({ students, records, onToggle }) {
 // ------------------------------------------
 function BillingView({ students, records, format }) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [receiptData, setReceiptData] = useState(null); // Lưu dữ liệu khi bấm Xuất Phiếu
+  const [receiptData, setReceiptData] = useState(null); 
   
   const report = useMemo(() => {
     return students.map(s => {
       const monthlyRecords = records.filter(r => r.studentId === s.id && r.date.startsWith(month));
-      // Lấy danh sách các ngày đi học, sắp xếp tăng dần
       const datesAttended = monthlyRecords.map(r => r.date.split('-').reverse().slice(0,2).join('/')).sort();
       const sessions = monthlyRecords.length;
       const sessionRate = s.sessionRate || s.hourlyRate || 0; 
@@ -272,7 +275,6 @@ function BillingView({ students, records, format }) {
 
   return (
     <div className="max-w-5xl mx-auto">
-      {/* NẾU ĐANG MỞ MODAL XUẤT PHIẾU, HIỂN THỊ MODAL NÀY TRÊN CÙNG */}
       {receiptData && (
         <ReceiptModal 
           data={receiptData} 
@@ -333,26 +335,23 @@ function BillingView({ students, records, format }) {
 }
 
 // ------------------------------------------
-// MODAL TẠO & HIỂN THỊ PHIẾU HỌC PHÍ (GIỐNG ẢNH MẪU)
+// MODAL TẠO & HIỂN THỊ PHIẾU HỌC PHÍ
 // ------------------------------------------
 function ReceiptModal({ data, month, format, onClose }) {
   const [step, setStep] = useState(1);
   const [feedback, setFeedback] = useState('');
   
-  // Tạo link QR Code qua VietQR API
   const qrMessage = `Hoc phi thang ${month.split('-')[1]} cua ${data.name}`;
   const qrUrl = `https://img.vietqr.io/image/${BANK_ID}-${ACCOUNT_NO}-compact2.png?amount=${data.totalAmount}&addInfo=${encodeURIComponent(qrMessage)}&accountName=${encodeURIComponent(ACCOUNT_NAME)}`;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm relative shadow-2xl flex flex-col max-h-[95vh]">
-        {/* Nút đóng */}
         <button onClick={onClose} className="absolute -top-12 right-0 text-white p-2 bg-black/40 rounded-full hover:bg-black/60">
           <X size={24} />
         </button>
 
         {step === 1 ? (
-          // BƯỚC 1: NHẬP NHẬN XÉT
           <div className="p-6">
             <h3 className="text-xl font-bold mb-4 text-slate-800">Soạn phiếu cho {data.name}</h3>
             <label className="block text-sm font-medium text-slate-600 mb-2">Nhận xét của cô giáo (Tùy chọn):</label>
@@ -370,16 +369,12 @@ function ReceiptModal({ data, month, format, onClose }) {
             </button>
           </div>
         ) : (
-          // BƯỚC 2: HIỂN THỊ PHIẾU (ĐỂ CHỤP MÀN HÌNH)
           <div className="flex flex-col bg-slate-100 overflow-y-auto rounded-2xl pb-4">
             <div className="p-4 text-center text-sm font-medium text-slate-500 bg-slate-100 flex items-center justify-center gap-2">
               📸 Hãy chụp màn hình phiếu này để gửi Phụ Huynh
             </div>
             
-            {/* --- KHUNG HÌNH PHIẾU HỌC PHÍ THỰC TẾ --- */}
             <div id="receipt-capture-area" className="bg-white mx-4 mt-2 rounded-2xl shadow-sm border border-slate-200 overflow-hidden font-sans">
-              
-              {/* Header (Màu xanh ngọc) */}
               <div className="bg-[#6EB6A6] text-white text-center py-5 px-4">
                 <p className="text-xs font-semibold tracking-widest mb-1 opacity-90">🌈 LỚP CỦA CÔ LƯƠNG 🌈</p>
                 <h2 className="text-2xl font-black uppercase tracking-wider mb-1">Phiếu Học Phí</h2>
@@ -387,7 +382,6 @@ function ReceiptModal({ data, month, format, onClose }) {
               </div>
 
               <div className="p-5">
-                {/* Info Rows */}
                 <div className="space-y-3 mb-5 border-b border-dashed border-slate-300 pb-5">
                   <div className="flex justify-between items-center">
                     <span className="text-slate-600 font-medium flex items-center gap-2">🧸 Học sinh</span>
@@ -403,13 +397,11 @@ function ReceiptModal({ data, month, format, onClose }) {
                   </div>
                 </div>
 
-                {/* Total Box */}
                 <div className="bg-[#F2F9F8] border border-[#BCE0D8] rounded-xl p-4 text-center mb-5">
                   <p className="text-[#4A8F80] font-bold text-sm mb-1 uppercase tracking-wide">Tổng Học Phí</p>
                   <p className="text-[#326B5E] text-3xl font-black">{format(data.totalAmount)}</p>
                 </div>
 
-                {/* Dates Attended */}
                 <div className="mb-5">
                   <p className="text-center text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ngày đi học</p>
                   <div className="flex flex-wrap justify-center gap-2">
@@ -421,7 +413,6 @@ function ReceiptModal({ data, month, format, onClose }) {
                   </div>
                 </div>
 
-                {/* Feedback Section (Nếu có) */}
                 {feedback && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-slate-700 relative">
                     <p className="text-center text-xs font-bold text-amber-600/70 uppercase mb-2">--- Nhận xét ---</p>
@@ -429,13 +420,11 @@ function ReceiptModal({ data, month, format, onClose }) {
                   </div>
                 )}
 
-                {/* QR Code Section */}
                 <div className="border border-[#D1EAE5] border-dashed rounded-xl p-4 flex flex-col items-center">
                   <p className="text-xs font-bold text-[#4A8F80] uppercase tracking-widest mb-2">Mã Thanh Toán</p>
                   <img src={qrUrl} alt="QR Code" className="w-48 h-48 object-contain rounded-lg" />
                   <p className="text-[10px] text-slate-400 mt-2 text-center">Quét mã bằng ứng dụng Ngân hàng<br/>hoặc Zalo/Momo</p>
                 </div>
-
               </div>
             </div>
             
@@ -444,7 +433,6 @@ function ReceiptModal({ data, month, format, onClose }) {
                 Quay lại sửa nhận xét
               </button>
             </div>
-
           </div>
         )}
       </div>
