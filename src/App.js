@@ -22,15 +22,15 @@ const db = getFirestore(app);
 // ==========================================
 // THÔNG TIN NGÂN HÀNG CỦA LƯƠNG (SỬA Ở ĐÂY)
 // ==========================================
-const BANK_ID = "MB"; // Ví dụ: MB, VCB, TCB, ACB, VPB, TPB...
-const ACCOUNT_NO = "0123456789"; // Số tài khoản ngân hàng
+const BANK_ID = "NAB"; // Ví dụ: MB, VCB, TCB, ACB, VPB, TPB...
+const ACCOUNT_NO = "701054319300001"; // Số tài khoản ngân hàng
 const ACCOUNT_NAME = "DAO THI BAO LUONG"; // Tên chủ tài khoản (Không dấu)
 
 // ==========================================
 // THÔNG TIN ĐĂNG NHẬP (WHITELIST)
 // ==========================================
-const APP_USERNAME = "luong";
-const APP_PASSWORD = "123";
+const APP_USERNAME = "luongxinh";
+const APP_PASSWORD = "Milu.14224";
 // ==========================================
 
 export default function App() {
@@ -171,7 +171,8 @@ function LoginScreen({ onLoginSuccess }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (username.trim().toLowerCase() === APP_USERNAME && password === APP_PASSWORD) {
+    // BUG FIX: Chuyển đổi cả 2 vế sang chữ thường để so sánh không bị lỗi nếu người dùng đổi tên có chữ in hoa
+    if (username.trim().toLowerCase() === APP_USERNAME.toLowerCase() && password === APP_PASSWORD) {
       setError('');
       onLoginSuccess();
     } else {
@@ -435,19 +436,56 @@ function BillingView({ students, records, format }) {
 }
 
 // ------------------------------------------
-// MODAL TẠO & HIỂN THỊ PHIẾU HỌC PHÍ
+// MODAL TẠO & HIỂN THỊ PHIẾU HỌC PHÍ (DẠNG ẢNH CHO IPHONE)
 // ------------------------------------------
 function ReceiptModal({ data, month, format, onClose }) {
   const [step, setStep] = useState(1);
   const [feedback, setFeedback] = useState('');
+  const [imageUrl, setImageUrl] = useState(null);
+  const receiptRef = useRef(null);
   
   const qrMessage = `Hoc phi thang ${month.split('-')[1]} cua ${data.name}`;
   const qrUrl = `https://img.vietqr.io/image/${BANK_ID}-${ACCOUNT_NO}-compact2.png?amount=${data.totalAmount}&addInfo=${encodeURIComponent(qrMessage)}&accountName=${encodeURIComponent(ACCOUNT_NAME)}`;
 
+  // Tự động tải thư viện tạo ảnh html2canvas ngay khi mở modal
+  useEffect(() => {
+    if (!window.html2canvas) {
+      const script = document.createElement('script');
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  const handleGenerateImage = () => {
+    setStep(2);
+    setImageUrl(null); // Reset ảnh nếu tạo lại
+
+    // Đợi 1 giây để DOM và ảnh QR code load đầy đủ
+    setTimeout(async () => {
+      if (window.html2canvas && receiptRef.current) {
+        try {
+          const canvas = await window.html2canvas(receiptRef.current, {
+            scale: 3, // Tạo ảnh độ phân giải cao cho iPhone
+            useCORS: true, // Cho phép kéo QR code từ nguồn ngoài
+            backgroundColor: '#ffffff'
+          });
+          setImageUrl(canvas.toDataURL('image/jpeg', 0.9));
+        } catch (err) {
+          console.error("Lỗi tạo ảnh:", err);
+          alert("Lỗi khi tạo ảnh, vui lòng thử lại!");
+          setStep(1);
+        }
+      } else {
+        alert("Thư viện ảnh chưa tải xong, vui lòng đợi thêm 1 giây.");
+        setStep(1);
+      }
+    }, 1000);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-sm relative shadow-2xl flex flex-col max-h-[95vh]">
-        <button onClick={onClose} className="absolute -top-12 right-0 text-white p-2 bg-black/40 rounded-full hover:bg-black/60">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm relative shadow-2xl flex flex-col">
+        <button onClick={onClose} className="absolute -top-12 right-0 text-white p-2 bg-black/40 rounded-full hover:bg-black/60 z-50">
           <X size={24} />
         </button>
 
@@ -462,77 +500,94 @@ function ReceiptModal({ data, month, format, onClose }) {
               onChange={e => setFeedback(e.target.value)}
             ></textarea>
             <button 
-              onClick={() => setStep(2)}
+              onClick={handleGenerateImage}
               className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-colors"
             >
-              Xem trước Phiếu Học Phí
+              Tạo Ảnh Phiếu Học Phí
             </button>
           </div>
         ) : (
-          <div className="flex flex-col bg-slate-100 overflow-y-auto rounded-2xl pb-4">
-            <div className="p-4 text-center text-sm font-medium text-slate-500 bg-slate-100 flex items-center justify-center gap-2">
-              📸 Hãy chụp màn hình phiếu này để gửi Phụ Huynh
-            </div>
+          <div className="flex flex-col bg-slate-100 rounded-2xl overflow-hidden relative">
             
-            <div id="receipt-capture-area" className="bg-white mx-4 mt-2 rounded-2xl shadow-sm border border-slate-200 overflow-hidden font-sans">
-              <div className="bg-[#6EB6A6] text-white text-center py-5 px-4">
-                <p className="text-xs font-semibold tracking-widest mb-1 opacity-90">🌈 LỚP CỦA CÔ LƯƠNG 🌈</p>
-                <h2 className="text-2xl font-black uppercase tracking-wider mb-1">Phiếu Học Phí</h2>
-                <p className="text-sm font-medium">Tháng {month.split('-')[1]}/{month.split('-')[0]}</p>
+            {/* TRẠNG THÁI 1: HIỂN THỊ ẢNH CHO IPHONE SAU KHI TẠO XONG */}
+            {!imageUrl ? (
+              <div className="p-12 flex flex-col items-center justify-center">
+                <Loader2 className="animate-spin text-emerald-500 mb-4" size={40} />
+                <p className="text-slate-600 font-medium text-center">Đang vẽ phiếu học phí...<br/><span className="text-xs text-slate-400">Vui lòng chờ giây lát</span></p>
               </div>
-
-              <div className="p-5">
-                <div className="space-y-3 mb-5 border-b border-dashed border-slate-300 pb-5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 font-medium flex items-center gap-2">🧸 Học sinh</span>
-                    <span className="font-bold text-slate-800 text-lg">{data.name}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 font-medium flex items-center gap-2">💎 Học phí / buổi</span>
-                    <span className="font-semibold text-slate-800">{format(data.sessionRate)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 font-medium flex items-center gap-2">📝 Số buổi học</span>
-                    <span className="font-semibold text-slate-800">{data.sessions} buổi</span>
-                  </div>
+            ) : (
+              <div className="flex flex-col h-full max-h-[85vh]">
+                <div className="p-3 text-center text-[13px] font-medium text-emerald-800 bg-emerald-100 flex-shrink-0 animate-pulse">
+                  ✅ <b>Nhấn giữ vào ảnh</b> bên dưới để Lưu vào máy
                 </div>
-
-                <div className="bg-[#F2F9F8] border border-[#BCE0D8] rounded-xl p-4 text-center mb-5">
-                  <p className="text-[#4A8F80] font-bold text-sm mb-1 uppercase tracking-wide">Tổng Học Phí</p>
-                  <p className="text-[#326B5E] text-3xl font-black">{format(data.totalAmount)}</p>
+                <div className="overflow-y-auto p-4 flex-1">
+                  <img src={imageUrl} alt="Phiếu học phí" className="w-full h-auto rounded-xl shadow-lg border border-slate-200 pointer-events-auto" />
                 </div>
-
-                <div className="mb-5">
-                  <p className="text-center text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ngày đi học</p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {data.datesAttended.map(d => (
-                      <span key={d} className="bg-[#EDF6F5] text-[#4A8F80] border border-[#D1EAE5] px-2 py-1 rounded text-xs font-semibold">
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {feedback && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-slate-700 relative">
-                    <p className="text-center text-xs font-bold text-amber-600/70 uppercase mb-2">--- Nhận xét ---</p>
-                    <p className="whitespace-pre-line leading-relaxed">{feedback}</p>
-                  </div>
-                )}
-
-                <div className="border border-[#D1EAE5] border-dashed rounded-xl p-4 flex flex-col items-center">
-                  <p className="text-xs font-bold text-[#4A8F80] uppercase tracking-widest mb-2">Mã Thanh Toán</p>
-                  <img src={qrUrl} alt="QR Code" className="w-48 h-48 object-contain rounded-lg" />
-                  <p className="text-[10px] text-slate-400 mt-2 text-center">Quét mã bằng ứng dụng Ngân hàng<br/>hoặc Zalo/Momo</p>
+                <div className="p-4 bg-white border-t flex-shrink-0">
+                  <button onClick={() => setStep(1)} className="w-full text-slate-500 font-medium py-2 hover:bg-slate-100 rounded-lg transition-colors">
+                    Soạn lại nhận xét
+                  </button>
                 </div>
               </div>
+            )}
+
+            {/* TRẠNG THÁI 2: DOM ẨN ĐỂ THƯ VIỆN CHỤP ẢNH (Không hiển thị cho user) */}
+            <div style={{ position: 'absolute', top: 0, left: '-9999px', width: '400px' }}>
+              <div ref={receiptRef} className="bg-white overflow-hidden font-sans rounded-2xl">
+                <div className="bg-[#6EB6A6] text-white text-center py-5 px-4">
+                  <p className="text-xs font-semibold tracking-widest mb-1 opacity-90">🌈 LỚP CỦA CÔ LƯƠNG 🌈</p>
+                  <h2 className="text-2xl font-black uppercase tracking-wider mb-1">Phiếu Học Phí</h2>
+                  <p className="text-sm font-medium">Tháng {month.split('-')[1]}/{month.split('-')[0]}</p>
+                </div>
+
+                <div className="p-5">
+                  <div className="space-y-3 mb-5 border-b border-dashed border-slate-300 pb-5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600 font-medium flex items-center gap-2">🧸 Học sinh</span>
+                      <span className="font-bold text-slate-800 text-lg">{data.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600 font-medium flex items-center gap-2">💎 Học phí / buổi</span>
+                      <span className="font-semibold text-slate-800">{format(data.sessionRate)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600 font-medium flex items-center gap-2">📝 Số buổi học</span>
+                      <span className="font-semibold text-slate-800">{data.sessions} buổi</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#F2F9F8] border border-[#BCE0D8] rounded-xl p-4 text-center mb-5">
+                    <p className="text-[#4A8F80] font-bold text-sm mb-1 uppercase tracking-wide">Tổng Học Phí</p>
+                    <p className="text-[#326B5E] text-3xl font-black">{format(data.totalAmount)}</p>
+                  </div>
+
+                  <div className="mb-5">
+                    <p className="text-center text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ngày đi học</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {data.datesAttended.map(d => (
+                        <span key={d} className="bg-[#EDF6F5] text-[#4A8F80] border border-[#D1EAE5] px-2 py-1 rounded text-xs font-semibold">
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {feedback && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-slate-700 relative">
+                      <p className="text-center text-xs font-bold text-amber-600/70 uppercase mb-2">--- Nhận xét ---</p>
+                      <p className="whitespace-pre-line leading-relaxed">{feedback}</p>
+                    </div>
+                  )}
+
+                  <div className="border border-[#D1EAE5] border-dashed rounded-xl p-4 flex flex-col items-center">
+                    <p className="text-xs font-bold text-[#4A8F80] uppercase tracking-widest mb-2">Mã Thanh Toán</p>
+                    <img src={qrUrl} alt="QR Code" crossOrigin="anonymous" className="w-48 h-48 object-contain rounded-lg" />
+                    <p className="text-[10px] text-slate-400 mt-2 text-center">Quét mã bằng ứng dụng Ngân hàng<br/>hoặc Zalo/Momo</p>
+                  </div>
+                </div>
+              </div>
             </div>
-            
-            <div className="p-4 pt-2">
-              <button onClick={() => setStep(1)} className="w-full text-slate-500 font-medium py-2 hover:bg-slate-200 rounded-lg transition-colors">
-                Quay lại sửa nhận xét
-              </button>
-            </div>
+
           </div>
         )}
       </div>
